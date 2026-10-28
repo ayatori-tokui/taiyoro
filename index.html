@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <!-- ブラウザ/OSのダークモード設定による自動色変換を無効化し、常に同じ配色で表示する -->
+  <meta name="color-scheme" content="only light" />
+  <meta name="theme-color" content="#fff8ee" />
+  <meta name="description" content="TAIYORO（対よろ）は、スマホ2台でP2P接続して使う対戦カードゲーム用チェスクロック。QRコードで簡単接続、1手戻す・自動再接続・画面スリープ防止に対応。" />
+  <title>TAIYORO | TCGチェスクロック</title>
+
+  <!-- フォント -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Noto+Sans+JP:wght@400;500;700;900&display=swap"
+    rel="stylesheet" />
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+            sans: ['"Noto Sans JP"', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body class="h-full font-sans antialiased">
+
+  <!-- 時間切れ時の全画面フラッシュ -->
+  <div id="alert-flash" aria-hidden="true"></div>
+
+  <!-- ===================== 接続・設定画面 ===================== -->
+  <section id="screen-setup" class="screen fixed inset-0 overflow-y-auto">
+    <div class="setup-bg"></div>
+    <div class="relative mx-auto flex min-h-full max-w-md flex-col gap-5 px-5 py-8">
+
+      <header class="text-center">
+        <p class="brand-sub">対戦よろしくお願いします</p>
+        <h1 class="brand-title">TAIYORO</h1>
+        <p class="mt-1 text-sm font-bold text-stone-500">対よろ ｜ TCGチェスクロック</p>
+        <p class="mt-3 text-sm text-stone-500">お互いのスマホで、どこでも持ち時間を管理</p>
+      </header>
+
+      <!-- 前回対局の復元 -->
+      <div id="restore-card" class="card card-amber is-hidden">
+        <p class="text-sm font-black text-amber-800">前回の対局データがあります</p>
+        <p id="restore-info" class="mt-1 text-xs text-stone-600"></p>
+        <button id="btn-restore" type="button" class="btn btn-amber mt-3 w-full">前回の対局を復元する</button>
+      </div>
+
+      <!-- 選択パネル -->
+      <div id="setup-choice" class="flex flex-col gap-5">
+        <!-- ホスト -->
+        <div class="card">
+          <h2 class="card-title">ホスト（ルーム作成）</h2>
+          <p class="card-note">先攻（P1）はホストです。持ち時間を選んでください。</p>
+
+          <div class="mt-4 grid grid-cols-3 gap-2" role="group" aria-label="持ち時間">
+            <button id="preset-25" type="button" class="chip" data-sec="1500" aria-pressed="true">25分</button>
+            <button id="preset-30" type="button" class="chip" data-sec="1800" aria-pressed="false">30分</button>
+            <button id="preset-custom" type="button" class="chip" data-sec="custom" aria-pressed="false">カスタム</button>
+          </div>
+
+          <div id="custom-wrap" class="is-hidden mt-3">
+            <label for="custom-sec" class="text-xs font-bold text-stone-500">持ち時間（秒）</label>
+            <input id="custom-sec" type="number" inputmode="numeric" min="10" max="36000" step="1" value="900"
+              class="field mt-1 w-full font-mono text-xl font-bold" />
+          </div>
+
+          <p id="setup-error" class="is-hidden mt-3 text-sm font-bold text-red-600"></p>
+
+          <button id="btn-create" type="button" class="btn btn-emerald mt-4 w-full">ルーム作成</button>
+        </div>
+
+        <!-- ゲスト -->
+        <div class="card">
+          <h2 class="card-title">ゲスト（参加）</h2>
+          <p class="card-note">ホストのQRコードを読み取るか、URL / ルームIDを入力してください。</p>
+          <div class="mt-3 flex gap-2">
+            <input id="join-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+              placeholder="URL または ルームID" class="field min-w-0 flex-1 text-sm" />
+            <button id="btn-join" type="button" class="btn btn-sky shrink-0">参加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ホスト待機パネル -->
+      <div id="setup-host-wait" class="card is-hidden text-center">
+        <h2 class="card-title">ゲストの参加を待っています</h2>
+        <p class="card-note">相手のスマホでQRコードを読み取ってください。</p>
+        <div class="mt-4 flex justify-center">
+          <div id="host-qr" class="qr-box"></div>
+        </div>
+        <p id="host-url" class="url-box mt-4"></p>
+        <button id="btn-copy" type="button" class="btn btn-slate mt-3 w-full">参加URLをコピー</button>
+        <p id="host-wait-status" class="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-emerald-700">
+          <span class="spinner"></span><span class="status-text">準備中…</span>
+        </p>
+        <button id="btn-cancel-host" type="button" class="link-btn mt-4">キャンセル</button>
+      </div>
+
+      <!-- ゲスト接続中パネル -->
+      <div id="setup-guest-wait" class="card is-hidden text-center">
+        <h2 class="card-title">ホストへ接続中</h2>
+        <p class="mt-1 break-all font-mono text-xs text-stone-500" id="guest-target"></p>
+        <p id="guest-wait-status"
+          class="mt-6 flex items-center justify-center gap-2 text-sm font-bold text-emerald-700">
+          <span class="spinner"></span><span class="status-text">接続中…</span>
+        </p>
+        <button id="btn-cancel-guest" type="button" class="link-btn mt-6">キャンセル</button>
+      </div>
+
+      <footer class="mt-auto pt-4 text-center text-[11px] leading-relaxed text-stone-500">
+        同じWi-Fiでなくても通信可能（WebRTC / PeerJS）。<br />状態遷移時のみ通信するため、通信量はごくわずかです。
+      </footer>
+    </div>
+  </section>
+
+  <!-- ===================== メインタイマー画面 ===================== -->
+  <section id="screen-main" class="screen is-hidden fixed inset-0 flex flex-col">
+
+    <!-- 上部: 情報・サブ機能（誤タップ防止のため手元から遠い位置） -->
+    <header class="main-top shrink-0 space-y-2 px-3 pt-3">
+      <div class="flex items-center justify-between text-xs">
+        <span class="flex items-center gap-2">
+          <span class="brand-mini">TAIYORO</span>
+          <span id="turn-label" class="pill font-mono">TURN 1</span>
+        </span>
+        <span id="conn-pill" class="conn-pill" data-ok="false">
+          <span class="conn-dot"></span><span id="conn-pill-text">未接続</span>
+        </span>
+      </div>
+
+      <!-- 相手パネル -->
+      <div id="opp-panel" class="panel flex items-center justify-between rounded-2xl px-4 py-3" data-state="ready">
+        <div class="min-w-0">
+          <p id="opp-label" class="text-sm font-bold">相手</p>
+          <p id="opp-sub" class="mt-1 truncate font-mono text-[11px] font-bold">&nbsp;</p>
+        </div>
+        <p id="opp-time" class="timer-digits timer-large font-mono font-black">25:00</p>
+      </div>
+
+      <!-- サブメニュー -->
+      <nav class="grid grid-cols-5 gap-2" aria-label="サブメニュー">
+        <button id="btn-pause" type="button" class="tool-btn"><span class="tool-ico">⏸</span><span
+            id="btn-pause-text">一時停止</span></button>
+        <button id="btn-undo" type="button" class="tool-btn"><span class="tool-ico">↶</span><span>1手戻す</span></button>
+        <button id="btn-log" type="button" class="tool-btn"><span class="tool-ico">☰</span><span>ログ</span></button>
+        <button id="btn-help" type="button" class="tool-btn"><span class="tool-ico">？</span><span>ヘルプ</span></button>
+        <button id="btn-reset" type="button" class="tool-btn"><span class="tool-ico">⟲</span><span>リセット</span></button>
+      </nav>
+
+      <button id="audio-hint" type="button" class="audio-hint is-hidden w-full">
+        🔈 タップして通知音を有効化
+      </button>
+    </header>
+
+    <!-- 下部: 自分のメインタップ領域（画面の約60〜70%） -->
+    <main class="main-bottom min-h-0 flex-1 px-3 pb-3 pt-3">
+      <button id="my-btn" type="button"
+        class="panel main-btn flex h-full w-full flex-col items-center justify-center gap-2 rounded-3xl"
+        data-state="ready" data-kind="wait" disabled>
+        <span id="my-label" class="text-base font-bold">あなた</span>
+        <span id="my-time" class="timer-digits timer-huge font-mono font-black">25:00</span>
+        <span id="my-sub" class="font-mono text-sm font-bold">&nbsp;</span>
+        <span id="my-action" class="mt-4 text-3xl font-black tracking-wide">接続中</span>
+      </button>
+    </main>
+  </section>
+
+  <!-- ===================== 再接続オーバーレイ ===================== -->
+  <div id="conn-overlay" class="overlay is-hidden" role="alertdialog" aria-live="assertive"
+    aria-labelledby="conn-title">
+    <div class="mx-auto flex max-w-sm flex-col items-center px-6 text-center">
+      <div class="spinner spinner-lg"></div>
+      <h2 id="conn-title" class="mt-5 text-2xl font-black text-amber-700">接続が切断されました</h2>
+      <p id="conn-detail" class="mt-2 text-sm font-bold text-stone-700">再接続しています…</p>
+      <p class="mt-2 text-xs text-stone-500">タイマーは強制一時停止中です。同期完了後に再開できます。</p>
+
+      <div id="conn-share" class="is-hidden mt-5 flex flex-col items-center">
+        <p class="text-xs font-bold text-stone-500">ゲストが再参加する場合のQR / URL</p>
+        <div id="conn-qr" class="qr-box mt-2"></div>
+        <p id="conn-url" class="mt-2 break-all font-mono text-[10px] text-stone-500"></p>
+      </div>
+
+      <button id="btn-conn-leave" type="button" class="link-btn mt-6">対局を中断して設定画面へ戻る</button>
+    </div>
+  </div>
+
+  <!-- ===================== モーダル ===================== -->
+
+  <!-- 使い方 -->
+  <div id="modal-help" class="modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="help-title" class="text-lg font-black">TAIYORO の使い方</h2>
+        <button type="button" class="modal-x" data-close="modal-help" aria-label="閉じる">✕</button>
+      </div>
+      <div class="modal-body help-body">
+
+        <h3>1. 接続手順</h3>
+
+        <!-- 図解: 接続の流れ -->
+        <figure class="help-fig">
+          <svg viewBox="0 0 320 120" role="img" aria-label="接続の流れ：ホストがルーム作成、QRコードをゲストが読み取り、自動で対局画面へ">
+            <rect x="8" y="10" width="78" height="100" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="2.5" />
+            <rect x="20" y="24" width="54" height="54" rx="6" fill="#f1f5f9" stroke="#94a3b8" />
+            <g fill="#334155">
+              <rect x="26" y="30" width="14" height="14" />
+              <rect x="54" y="30" width="14" height="14" />
+              <rect x="26" y="58" width="14" height="14" />
+              <rect x="46" y="46" width="8" height="8" />
+              <rect x="58" y="60" width="10" height="10" />
+            </g>
+            <rect x="22" y="88" width="50" height="14" rx="7" fill="#10b981" />
+            <text x="47" y="98.5" font-size="8" font-weight="700" fill="#fff" text-anchor="middle">ルーム作成</text>
+            <text x="47" y="122" font-size="9" font-weight="700" fill="#475569" text-anchor="middle">ホスト</text>
+
+            <path d="M96 52 H150" stroke="#0ea5e9" stroke-width="3" stroke-dasharray="5 4" fill="none" />
+            <path d="M150 46 L162 52 L150 58 Z" fill="#0ea5e9" />
+            <text x="128" y="42" font-size="9" font-weight="700" fill="#0369a1" text-anchor="middle">QRを読む</text>
+
+            <rect x="170" y="10" width="78" height="100" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="2.5" />
+            <rect x="182" y="24" width="54" height="40" rx="6" fill="#e0f2fe" stroke="#7dd3fc" />
+            <text x="209" y="48" font-size="8" font-weight="700" fill="#0369a1" text-anchor="middle">接続中…</text>
+            <text x="209" y="122" font-size="9" font-weight="700" fill="#475569" text-anchor="middle">ゲスト</text>
+
+            <path d="M256 60 H282" stroke="#10b981" stroke-width="3" fill="none" />
+            <path d="M282 54 L294 60 L282 66 Z" fill="#10b981" />
+            <rect x="262" y="76" width="54" height="30" rx="6" fill="#d1fae5" stroke="#10b981" stroke-width="2" />
+            <text x="289" y="88" font-size="7.5" font-weight="700" fill="#065f46" text-anchor="middle">自動で</text>
+            <text x="289" y="99" font-size="7.5" font-weight="700" fill="#065f46" text-anchor="middle">対局画面へ</text>
+          </svg>
+        </figure>
+
+        <ol>
+          <li>ホストが持ち時間（25分／30分／カスタム秒）を選び「ルーム作成」。</li>
+          <li>表示されたQRコードをゲストのスマホで読み取る（URLを共有してもOK）。</li>
+          <li>接続に成功すると両方の画面が自動でタイマー画面へ切り替わります。</li>
+          <li>ホストの画面で「対局開始」を押すと、ホスト（P1）の手番からスタートします。</li>
+        </ol>
+
+        <h3>2. 画面の見かた・手番の渡し方</h3>
+
+        <!-- 図解: メイン画面 -->
+        <figure class="help-fig">
+          <svg viewBox="0 0 300 330" role="img" aria-label="メイン画面の構成：上部に相手の時間とサブメニュー、下部に大きなターンエンドボタン">
+            <rect x="60" y="4" width="180" height="322" rx="24" fill="#fff" stroke="#cbd5e1" stroke-width="3" />
+            <!-- 相手 -->
+            <rect x="72" y="22" width="156" height="46" rx="12" fill="#eceff3" />
+            <text x="82" y="40" font-size="9" font-weight="700" fill="#6b7280">相手</text>
+            <text x="216" y="55" font-size="24" font-weight="800" fill="#6b7280" text-anchor="end"
+              font-family="monospace">24:10</text>
+            <!-- ツールバー -->
+            <g fill="#f1f5f9" stroke="#cbd5e1">
+              <rect x="72" y="76" width="27" height="24" rx="6" />
+              <rect x="102" y="76" width="27" height="24" rx="6" />
+              <rect x="132" y="76" width="27" height="24" rx="6" />
+              <rect x="162" y="76" width="27" height="24" rx="6" />
+              <rect x="192" y="76" width="27" height="24" rx="6" />
+            </g>
+            <g font-size="11" fill="#475569" text-anchor="middle">
+              <text x="85.5" y="92">⏸</text><text x="115.5" y="92">↶</text><text x="145.5" y="92">☰</text>
+              <text x="175.5" y="92">？</text><text x="205.5" y="92">⟲</text>
+            </g>
+            <!-- 自分 -->
+            <rect x="72" y="110" width="156" height="204" rx="18" fill="#d1fae5" stroke="#10b981" stroke-width="4" />
+            <text x="150" y="134" font-size="9" font-weight="700" fill="#065f46" text-anchor="middle">あなた</text>
+            <text x="150" y="196" font-size="44" font-weight="800" fill="#064e3b" text-anchor="middle"
+              font-family="monospace">25:00</text>
+            <text x="150" y="218" font-size="8" font-weight="700" fill="#047857" text-anchor="middle">今ターン 00:12 ／ 累計
+              04:10</text>
+            <rect x="96" y="250" width="108" height="34" rx="17" fill="#10b981" />
+            <text x="150" y="272" font-size="13" font-weight="800" fill="#fff" text-anchor="middle">ターンエンド</text>
+            <!-- 番号 -->
+            <g font-size="10" font-weight="800" fill="#fff" text-anchor="middle">
+              <circle cx="60" cy="45" r="10" fill="#0ea5e9" /><text x="60" y="49">1</text>
+              <circle cx="60" cy="88" r="10" fill="#0ea5e9" /><text x="60" y="92">2</text>
+              <circle cx="60" cy="190" r="10" fill="#0ea5e9" /><text x="60" y="194">3</text>
+              <circle cx="240" cy="267" r="10" fill="#0ea5e9" /><text x="240" y="271">4</text>
+            </g>
+            <g font-size="9" font-weight="700" fill="#475569">
+              <text x="248" y="45">相手の残り</text>
+              <text x="248" y="88">サブ機能</text>
+              <text x="248" y="190">自分の残り</text>
+              <text x="2" y="305" font-size="8" fill="#94a3b8"> </text>
+            </g>
+          </svg>
+          <figcaption>① 相手の残り時間　② サブメニュー　③ 自分の残り時間　④ ターンエンド（自分の手番のみ押せます）</figcaption>
+        </figure>
+
+        <ul>
+          <li>自分の手番中だけ、画面下部の大きな「ターンエンド」をタップ。</li>
+          <li>相手の手番中はボタンが無効化されます。</li>
+          <li>手番が移ると両端末で「ピッ」と音が鳴り、押した端末は短く振動します。</li>
+          <li>手番側は緑色に発光、待機側はグレーで控えめに表示されます。</li>
+        </ul>
+
+        <h3>3. 一時停止・Undo のルール</h3>
+        <ul>
+          <li><b>一時停止／再開</b>：どちらのプレイヤーでも操作可能。双方のタイマーが止まります。</li>
+          <li><b>1手戻す（Undo）</b>：直前のターンエンドを取り消し、手番・消費時間・ログを巻き戻します。押し間違い用で、履歴のある限り何手でも遡れます。</li>
+          <li><b>リセット</b>：持ち時間を初期化し、ログも消去します（確認あり）。</li>
+          <li>Undo・リセット・一時停止は相手の端末にも即時反映されます。</li>
+        </ul>
+
+        <h3>4. 時間切れ（両者負け）を防ぐ推奨運用</h3>
+        <ul>
+          <li>残りが1分を切ると表示が黄色、10秒を切ると赤く点滅します。</li>
+          <li>0秒になるとアラームと画面点滅で通知され、そのプレイヤーの時間切れとなります。</li>
+          <li>残り時間が少ない場合は、効果解決や確認の前に一度<b>一時停止</b>してから相談しましょう。</li>
+          <li>ジャッジコールや裁定確認が必要なときは、必ず一時停止してから行います。</li>
+          <li>ターンエンドの押し忘れ・押し間違いは、早めに Undo で戻します。</li>
+          <li>終盤は「ターンエンドの宣言→タップ」を声に出して行うと、両者が同時に時間切れになる事故を避けられます。</li>
+        </ul>
+
+        <h3>5. 切断・再接続</h3>
+        <ul>
+          <li>通信が切れるとタイマーは強制一時停止し、全画面で再接続を表示します。</li>
+          <li>ゲストは自動でホストへ再接続、ホストはゲストの再参加を待ちます。</li>
+          <li>再接続後にホストの最新状態へ同期され、「再開」が押せるようになります。</li>
+          <li>ブラウザを閉じても、設定画面の「前回の対局を復元する」から続きを再開できます。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ログ -->
+  <div id="modal-log" class="modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="log-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="log-title" class="text-lg font-black">ターン履歴・振り返り</h2>
+        <button type="button" class="modal-x" data-close="modal-log" aria-label="閉じる">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="log-summary" class="mb-3 grid grid-cols-2 gap-2 text-center text-xs"></div>
+        <div class="log-scroll">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>ターン</th>
+                <th>プレイヤー</th>
+                <th>所要時間</th>
+                <th>残り時間</th>
+              </tr>
+            </thead>
+            <tbody id="log-body"></tbody>
+          </table>
+        </div>
+        <p id="log-empty" class="py-8 text-center text-sm text-stone-500">まだターン履歴がありません</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- リセット確認 -->
+  <div id="modal-reset" class="modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="reset-title">
+    <div class="modal-card modal-card-sm">
+      <div class="modal-body text-center">
+        <h2 id="reset-title" class="text-lg font-black">対局をリセットしますか？</h2>
+        <p class="mt-2 text-sm text-stone-600">持ち時間とターン履歴が初期化されます。<br />相手の端末もリセットされます。</p>
+        <div class="mt-5 grid grid-cols-2 gap-3">
+          <button type="button" class="btn btn-slate" data-close="modal-reset">キャンセル</button>
+          <button id="btn-reset-ok" type="button" class="btn btn-red">リセット</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 時間切れ -->
+  <div id="modal-timeout" class="modal is-hidden" role="alertdialog" aria-modal="true" aria-labelledby="timeout-title">
+    <div class="modal-card modal-card-sm modal-card-alert">
+      <div class="modal-body text-center">
+        <p class="text-4xl">⏰</p>
+        <h2 id="timeout-title" class="mt-2 text-2xl font-black text-red-600">時間切れ</h2>
+        <p id="timeout-detail" class="mt-2 text-sm text-stone-600"></p>
+        <div class="mt-5 grid gap-3">
+          <button id="btn-timeout-close" type="button" class="btn btn-slate">アラームを止めて閉じる</button>
+          <button id="btn-timeout-log" type="button" class="btn btn-slate">ログを見る</button>
+          <button id="btn-timeout-reset" type="button" class="btn btn-red">リセットして再戦</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- ライブラリ (CDN) -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- アプリ本体 -->
+  <script src="peer-manager.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
