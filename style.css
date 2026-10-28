@@ -94,6 +94,38 @@ button:disabled {
   color: var(--emerald-dark);
 }
 
+.help-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.1rem 0.5rem 0.6rem;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid #7dd3fc;
+  color: #075985;
+  font-size: 0.9rem;
+  font-weight: 800;
+  box-shadow: 0 3px 10px rgba(14, 165, 233, 0.15);
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.help-pill:active {
+  transform: scale(0.96);
+  background: #e0f2fe;
+}
+
+.help-pill-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 9999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 900;
+}
+
 .pill {
   padding: 0.2rem 0.65rem;
   border-radius: 9999px;

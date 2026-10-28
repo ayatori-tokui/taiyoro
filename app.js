@@ -994,6 +994,7 @@
     $('btn-undo').addEventListener('click', undoTurn);
     $('btn-log').addEventListener('click', openLog);
     $('btn-help').addEventListener('click', () => openModal('modal-help'));
+    $('btn-help-setup').addEventListener('click', () => openModal('modal-help'));
     $('btn-reset').addEventListener('click', () => openModal('modal-reset'));
     $('btn-reset-ok').addEventListener('click', () => {
       closeModal('modal-reset');
