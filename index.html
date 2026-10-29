@@ -68,7 +68,7 @@
         <!-- ホスト -->
         <div class="card">
           <h2 class="card-title">ホスト（ルーム作成）</h2>
-          <p class="card-note">先攻（P1）はホストです。持ち時間を選んでください。</p>
+          <p class="card-note">持ち時間を選んでください。先攻は対局開始前に選べます。</p>
 
           <div class="mt-4 grid grid-cols-3 gap-2" role="group" aria-label="持ち時間">
             <button id="preset-25" type="button" class="chip" data-sec="1500" aria-pressed="true">25分</button>
@@ -153,6 +153,13 @@
           <p id="opp-sub" class="mt-1 truncate font-mono text-[11px] font-bold">&nbsp;</p>
         </div>
         <p id="opp-time" class="timer-digits timer-large font-mono font-black">25:00</p>
+      </div>
+
+      <!-- 先攻選択 (ホストのみ・開始前のみ表示) -->
+      <div id="first-select" class="first-select is-hidden" role="group" aria-label="先攻の選択">
+        <span class="first-select-label">先攻</span>
+        <button id="first-me" type="button" class="first-opt" aria-pressed="true">自分（ホスト）</button>
+        <button id="first-opp" type="button" class="first-opt" aria-pressed="false">相手（ゲスト）</button>
       </div>
 
       <!-- サブメニュー -->
@@ -252,7 +259,7 @@
           <li>ホストが持ち時間（25分／30分／カスタム秒）を選び「ルーム作成」。</li>
           <li>表示されたQRコードをゲストのスマホで読み取る（URLを共有してもOK）。</li>
           <li>接続に成功すると両方の画面が自動でタイマー画面へ切り替わります。</li>
-          <li>ホストの画面で「対局開始」を押すと、ホスト（P1）の手番からスタートします。</li>
+          <li>ホストの画面で「先攻」（自分／相手）を選び、「対局開始」を押すと、選んだ側の手番からスタートします。</li>
         </ol>
 
         <h3>2. 画面の見かた・手番の渡し方</h3>
@@ -317,6 +324,13 @@
           <li><b>1手戻す（Undo）</b>：直前のターンエンドを取り消し、手番・消費時間・ログを巻き戻します。押し間違い用で、履歴のある限り何手でも遡れます。</li>
           <li><b>リセット</b>：持ち時間を初期化し、ログも消去します（確認あり）。</li>
           <li>Undo・リセット・一時停止は相手の端末にも即時反映されます。</li>
+        </ul>
+
+        <h3>ログ（ターン履歴）の見かた</h3>
+        <ul>
+          <li>P1 は<b>ホスト</b>、P2 は<b>ゲスト</b>です（先攻・後攻とは無関係に固定）。</li>
+          <li>ログでは「あなた（ホスト・P1）」「相手（ゲスト・P2）」のように役割を併記します。</li>
+          <li>先攻はホストが開始前に選ぶため、ターン1が P2 から始まることもあります。</li>
         </ul>
 
         <h3>4. 時間切れ（両者負け）を防ぐ推奨運用</h3>

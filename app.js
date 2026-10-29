@@ -10,7 +10,7 @@
  *  - 状態遷移イベントの送受信 (PeerManager 経由)
  *  - localStorage による対局状態の保存・復元
  *
- * プレイヤー番号: 1 = ホスト(先攻), 2 = ゲスト
+ * プレイヤー番号: 1 = ホスト(P1), 2 = ゲスト(P2)。先攻はホストが開始前に選択 (firstPlayer)
  * ------------------------------------------------------------
  */
 (() => {
@@ -76,6 +76,7 @@
   let selectedPreset = '1500';
   let shownQrUrl = null;
   let toastTimer = null;
+  let firstPlayer = 1;      // 先攻プレイヤー (ホストが開始前に選択。既定はホスト=1)
 
   // ============================================================
   // Web Audio / バイブレーション
@@ -259,7 +260,7 @@
     if (role !== 'host' || state.status !== 'ready' || !canAct()) return;
     const now = Date.now();
     state.status = 'running';
-    state.activePlayer = 1;
+    state.activePlayer = firstPlayer;
     state.p1Remaining = state.initialTime;
     state.p2Remaining = state.initialTime;
     state.currentTurnNumber = 1;
@@ -616,6 +617,12 @@
 
     renderMainButton();
 
+    // 先攻選択 (ホストのみ・開始前のみ)
+    const fs = $('first-select');
+    fs.classList.toggle('is-hidden', !(role === 'host' && state.status === 'ready'));
+    $('first-me').setAttribute('aria-pressed', firstPlayer === 1 ? 'true' : 'false');
+    $('first-opp').setAttribute('aria-pressed', firstPlayer === 2 ? 'true' : 'false');
+
     // サブメニュー
     const pauseBtn = $('btn-pause');
     const isPaused = state.status === 'paused';
@@ -849,6 +856,11 @@
   // ============================================================
   // ログ表示
   // ============================================================
+  /** ログ用のプレイヤー表記: P1=ホスト / P2=ゲスト */
+  function roleLabel(p) {
+    return (p === 1 ? 'ホスト' : 'ゲスト') + '・P' + p;
+  }
+
   function renderLog() {
     const body = $('log-body');
     body.innerHTML = '';
@@ -866,7 +878,7 @@
       const remain = h.player === 1 ? h.p1Remaining : h.p2Remaining;
       const cells = [
         { text: String(h.turn) },
-        { text: (isMe ? 'あなた' : '相手') + ' P' + h.player, cls: 'who' },
+        { text: (isMe ? 'あなた' : '相手') + '（' + roleLabel(h.player) + '）', cls: 'who' },
         { text: fmtElapsed(h.duration) },
         { text: fmtRemaining(remain) },
       ];
@@ -888,7 +900,7 @@
       div.innerHTML = '';
       const title = document.createElement('p');
       title.className = 'font-bold ' + (p === myPlayer ? 'text-emerald-700' : 'text-sky-700');
-      title.textContent = (p === myPlayer ? 'あなた' : '相手') + '（P' + p + '）';
+      title.textContent = (p === myPlayer ? 'あなた' : '相手') + '（' + roleLabel(p) + '）';
       const info = document.createElement('p');
       info.className = 'mt-1 font-mono text-stone-700';
       info.textContent = '計 ' + fmtElapsed(totals[p]) + ' ／ 平均 ' + fmtElapsed(avg);
@@ -977,6 +989,9 @@
     $('btn-conn-leave').addEventListener('click', leaveToSetup);
 
     // メイン操作ボタン
+    $('first-me').addEventListener('click', () => { firstPlayer = 1; render(); });
+    $('first-opp').addEventListener('click', () => { firstPlayer = 2; render(); });
+
     $('my-btn').addEventListener('click', () => {
       unlockAudio();
       switch (state.status) {
