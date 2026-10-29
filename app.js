@@ -28,9 +28,9 @@
 
   const $ = (id) => document.getElementById(id);
   const other = (p) => (p === 1 ? 2 : 1);
-  const remainingOf = (st, p) => (p === 1 ? st.p1Remaining : st.p2Remaining);
-  const setRemaining = (st, p, v) => {
-    if (p === 1) st.p1Remaining = v; else st.p2Remaining = v;
+  const usedOf = (st, p) => (p === 1 ? st.p1Used : st.p2Used);
+  const setUsed = (st, p, v) => {
+    if (p === 1) st.p1Used = v; else st.p2Used = v;
   };
   const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -46,18 +46,26 @@
     return pad2(Math.floor(total / 60)) + ':' + pad2(total % 60);
   }
 
+  /**
+   * 持ち時間は「1ゲーム全体」で両者が共有する。
+   * remaining は共有の残り時間で、手番に関係なく running 中は常に減る。
+   * p1Used / p2Used は各プレイヤーが消費した時間の累計 (振り返り用)。
+   */
   function createInitialState(initialMs) {
     return {
       status: 'ready',            // ready | running | paused | timeout
       activePlayer: 1,
-      timestamp: Date.now(),      // p1/p2Remaining・turnElapsed が有効な基準時刻 (ローカル時計)
-      p1Remaining: initialMs,
-      p2Remaining: initialMs,
+      timestamp: Date.now(),      // remaining・pXUsed・turnElapsed が有効な基準時刻 (ローカル時計)
+      remaining: initialMs,       // 共有の残り時間 (1ゲーム全体)
+      p1Used: 0,                  // P1 の累計消費
+      p2Used: 0,                  // P2 の累計消費
+
+
       currentTurnNumber: 1,
       turnElapsed: 0,             // timestamp 時点での現ターン消費時間
-      turnHistory: [],            // {turn, player, duration, p1Remaining, p2Remaining}
+      turnHistory: [],            // {turn, player, duration, remaining, p1Used, p2Used} (ターン終了時点)
       initialTime: initialMs,
-      loser: null,
+      loser: null,                // 時間切れ時は 'both' (共有時間のため両者時間切れ)
     };
   }
 
@@ -182,25 +190,29 @@
   // ============================================================
   // タイマー計算
   // ============================================================
-  /** 現在時刻 now における残り時間・現ターン経過を算出 */
+  /** 現在時刻 now における共有残り時間・各プレイヤー累計消費・現ターン経過を算出 */
   function live(now) {
-    let p1 = state.p1Remaining;
-    let p2 = state.p2Remaining;
+    let rem = state.remaining;
+    let u1 = state.p1Used;
+    let u2 = state.p2Used;
     let turn = state.turnElapsed;
     if (state.status === 'running') {
-      const d = Math.max(0, now - state.timestamp);
+      // 共有時間を超えて消費しないよう、経過は残り時間で頭打ちにする
+      const d = Math.min(Math.max(0, now - state.timestamp), Math.max(0, rem));
       turn += d;
-      if (state.activePlayer === 1) p1 -= d; else p2 -= d;
+      rem -= d;
+      if (state.activePlayer === 1) u1 += d; else u2 += d;
     }
-    return { p1: Math.max(0, p1), p2: Math.max(0, p2), turn };
+    return { remaining: Math.max(0, rem), p1Used: u1, p2Used: u2, turn };
   }
 
   /** 実行中なら現在値を state に確定させて paused にする (ローカルのみ) */
   function freezeToPaused(now) {
     if (state.status !== 'running') return;
     const l = live(now);
-    state.p1Remaining = l.p1;
-    state.p2Remaining = l.p2;
+    state.remaining = l.remaining;
+    state.p1Used = l.p1Used;
+    state.p2Used = l.p2Used;
     state.turnElapsed = l.turn;
     state.timestamp = now;
     state.status = 'paused';
@@ -210,10 +222,10 @@
   function freezeSaved(saved, savedAt) {
     const st = JSON.parse(JSON.stringify(saved));
     if (st.status === 'running') {
-      const d = Math.max(0, savedAt - st.timestamp);
+      const d = Math.min(Math.max(0, savedAt - st.timestamp), Math.max(0, st.remaining));
       st.turnElapsed += d;
-      if (st.activePlayer === 1) st.p1Remaining = Math.max(0, st.p1Remaining - d);
-      else st.p2Remaining = Math.max(0, st.p2Remaining - d);
+      st.remaining = Math.max(0, st.remaining - d);
+      if (st.activePlayer === 1) st.p1Used += d; else st.p2Used += d;
       st.status = 'paused';
     }
     st.timestamp = Date.now();
@@ -238,8 +250,9 @@
       type,
       activePlayer: state.activePlayer,
       timestamp: Date.now(),
-      p1Remaining: state.p1Remaining,
-      p2Remaining: state.p2Remaining,
+      remaining: state.remaining,
+      p1Used: state.p1Used,
+      p2Used: state.p2Used,
       currentTurnNumber: state.currentTurnNumber,
       turnHistory: state.turnHistory,
       // 以下は再現に必要な補助項目
@@ -261,8 +274,9 @@
     const now = Date.now();
     state.status = 'running';
     state.activePlayer = firstPlayer;
-    state.p1Remaining = state.initialTime;
-    state.p2Remaining = state.initialTime;
+    state.remaining = state.initialTime;
+    state.p1Used = 0;
+    state.p2Used = 0;
     state.currentTurnNumber = 1;
     state.turnElapsed = 0;
     state.turnHistory = [];
@@ -282,11 +296,13 @@
       turn: state.currentTurnNumber,
       player: act,
       duration: l.turn,
-      p1Remaining: l.p1,
-      p2Remaining: l.p2,
+      remaining: l.remaining,
+      p1Used: l.p1Used,
+      p2Used: l.p2Used,
     }]);
-    state.p1Remaining = l.p1;
-    state.p2Remaining = l.p2;
+    state.remaining = l.remaining;
+    state.p1Used = l.p1Used;
+    state.p2Used = l.p2Used;
     state.activePlayer = other(act);
     state.currentTurnNumber += 1;
     state.turnElapsed = 0;
@@ -314,10 +330,11 @@
     const now = Date.now();
     const hist = state.turnHistory.slice();
     const e = hist.pop();
-    state.p1Remaining = e.p1Remaining;
-    state.p2Remaining = e.p2Remaining;
+    state.remaining = e.remaining + e.duration;
+    state.p1Used = e.p1Used;
+    state.p2Used = e.p2Used;
     // ターン終了時点の値に、そのターンの消費時間を戻す
-    setRemaining(state, e.player, remainingOf(state, e.player) + e.duration);
+    setUsed(state, e.player, Math.max(0, usedOf(state, e.player) - e.duration));
     state.activePlayer = e.player;
     state.currentTurnNumber = e.turn;
     state.turnElapsed = e.duration;
@@ -341,19 +358,22 @@
   // ============================================================
   function handleTimeout(now) {
     const act = state.activePlayer;
-    const duration = state.turnElapsed + remainingOf(state, act);
+    // 共有時間の残りをすべて現手番プレイヤーの消費として確定
+    const duration = state.turnElapsed + state.remaining;
     const l = live(now);
     state.turnHistory = state.turnHistory.concat([{
       turn: state.currentTurnNumber,
       player: act,
       duration,
-      p1Remaining: act === 1 ? 0 : l.p1,
-      p2Remaining: act === 2 ? 0 : l.p2,
+      remaining: 0,
+      p1Used: act === 1 ? state.p1Used + state.remaining : state.p1Used,
+      p2Used: act === 2 ? state.p2Used + state.remaining : state.p2Used,
     }]);
-    setRemaining(state, act, 0);
+    setUsed(state, act, usedOf(state, act) + state.remaining);
+    state.remaining = 0;
     state.turnElapsed = duration;
     state.status = 'timeout';
-    state.loser = act;
+    state.loser = 'both'; // 共有時間のため両者時間切れ
     state.timestamp = now;
     persist(true);
     startAlarm();
@@ -362,11 +382,11 @@
   }
 
   function showTimeoutModal() {
-    const mine = state.loser === myPlayer;
-    $('timeout-title').textContent = mine ? 'あなたの時間切れ' : '相手の時間切れ';
-    $('timeout-detail').textContent = mine
-      ? '持ち時間が0になりました。'
-      : '相手の持ち時間が0になりました。';
+    // 持ち時間は両者共有のため、時間切れは常に両者の時間切れ
+    $('timeout-title').textContent = '時間切れ（両者）';
+    $('timeout-detail').textContent =
+      '1ゲームの持ち時間が0になりました。' +
+      '両者とも時間切れです。';
     openModal('modal-timeout');
   }
 
@@ -382,8 +402,9 @@
       activePlayer: msg.activePlayer === 2 ? 2 : 1,
       // 受信側は自分の時計を基準に再構築 (送信側と時計がズレていても影響しない)
       timestamp: Date.now() - lat,
-      p1Remaining: Number(msg.p1Remaining),
-      p2Remaining: Number(msg.p2Remaining),
+      remaining: Math.max(0, Number(msg.remaining) || 0),
+      p1Used: Number(msg.p1Used) || 0,
+      p2Used: Number(msg.p2Used) || 0,
       currentTurnNumber: Number(msg.currentTurnNumber) || 1,
       turnElapsed: Number(msg.turnElapsed) || 0,
       turnHistory: Array.isArray(msg.turnHistory) ? msg.turnHistory : [],
@@ -560,7 +581,7 @@
   // ============================================================
   function panelStateFor(player) {
     if (state.status === 'ready') return 'ready';
-    if (state.status === 'timeout') return state.loser === player ? 'lose' : 'waiting';
+    if (state.status === 'timeout') return 'lose';
     const isActive = state.activePlayer === player;
     if (state.status === 'paused') return isActive ? 'paused' : 'waiting';
     return isActive ? 'active' : 'waiting';
@@ -584,13 +605,13 @@
     const l = live(now);
     const me = myPlayer;
     const opp = other(me);
-    const myRem = me === 1 ? l.p1 : l.p2;
-    const oppRem = opp === 1 ? l.p1 : l.p2;
+    const rem = l.remaining;
 
-    setText($('my-time'), fmtRemaining(myRem));
-    setText($('opp-time'), fmtRemaining(oppRem));
-    applyTimeClass($('my-time'), myRem);
-    applyTimeClass($('opp-time'), oppRem);
+
+    setText($('my-time'), fmtRemaining(rem));
+    setText($('opp-time'), fmtRemaining(rem));
+    applyTimeClass($('my-time'), rem);
+    applyTimeClass($('opp-time'), rem);
 
     setText($('turn-label'), 'TURN ' + state.currentTurnNumber);
     setText($('my-label'), 'あなた（P' + me + (me === 1 ? '・ホスト' : '・ゲスト') + '）');
@@ -605,15 +626,16 @@
     if (oppPanel.dataset.state !== oppState) oppPanel.dataset.state = oppState;
 
     // サブ表示: 手番側は「現ターン消費」「累計消費」、待機側は累計のみ
-    const subFor = (player, rem) => {
-      const total = fmtElapsed(state.initialTime - rem);
+    const subFor = (player) => {
+      const used = player === 1 ? l.p1Used : l.p2Used;
+      const total = fmtElapsed(used);
       if (state.status !== 'ready' && state.activePlayer === player) {
         return '今ターン ' + fmtElapsed(l.turn) + '  ／  累計 ' + total;
       }
       return state.status === 'ready' ? '\u00a0' : '累計 ' + total;
     };
-    setText($('my-sub'), subFor(me, myRem));
-    setText($('opp-sub'), subFor(opp, oppRem));
+    setText($('my-sub'), subFor(me));
+    setText($('opp-sub'), subFor(opp));
 
     renderMainButton();
 
@@ -715,8 +737,8 @@
     if (state.status === 'running') {
       const active = state.activePlayer;
       const rem = live(now);
-      const activeRem = active === 1 ? rem.p1 : rem.p2;
-      if (activeRem <= 0) {
+
+      if (rem.remaining <= 0) {
         handleTimeout(now);
         return;
       }
@@ -756,7 +778,7 @@
       const st = s.state;
       $('restore-info').textContent =
         (s.role === 'host' ? 'ホスト' : 'ゲスト') + ' ／ TURN ' + st.currentTurnNumber +
-        ' ／ 残り P1 ' + fmtRemaining(st.p1Remaining) + ' ・ P2 ' + fmtRemaining(st.p2Remaining) +
+        ' ／ 残り ' + fmtRemaining(st.remaining ?? st.initialTime) +
         ' ／ 保存 ' + pad2(when.getHours()) + ':' + pad2(when.getMinutes());
     }
   }
@@ -875,7 +897,7 @@
       const tr = document.createElement('tr');
       const isMe = h.player === myPlayer;
       tr.className = isMe ? 'row-me' : 'row-opp';
-      const remain = h.player === 1 ? h.p1Remaining : h.p2Remaining;
+      const remain = h.remaining != null ? h.remaining : (h.player === 1 ? h.p1Remaining : h.p2Remaining);
       const cells = [
         { text: String(h.turn) },
         { text: (isMe ? 'あなた' : '相手') + '（' + roleLabel(h.player) + '）', cls: 'who' },
